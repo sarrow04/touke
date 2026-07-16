@@ -52,11 +52,9 @@ with tabs[0]:
         code1 += "print('▼ 現在のデータ型とメモリ使用量')\n"
         code1 += "display(df.info())\n"
         
-        # --- 今回追加した「データ個数・欠損値」の確認ブロック ---
         code1 += "print('\\n▼ 各カラムのデータの種類数(ユニーク数)と欠損値数')\n"
         code1 += "summary_df = pd.DataFrame({'ユニークなデータの種類数': df.nunique(), '欠損値の数': df.isnull().sum()})\n"
         code1 += "display(summary_df)\n"
-        # ----------------------------------------------------
         
         code1 += "print('\\n▼ データのプレビュー (先頭5行)')\n"
         code1 += "display(df.head(5))\n"
@@ -70,22 +68,42 @@ with tabs[0]:
 # =========================================================
 with tabs[1]:
     st.header("2. データ型の適正化と異常値ハンドリング")
-    st.warning("⚠️ フェーズ1で出力された結果を見ながら、正確にカラム名を入力してください。")
+    st.warning("⚠️ フェーズ1で出力された結果を見ながら、変換したいカラム名をカンマ区切りで入力してください。")
     
-    numeric_cols_input = st.text_input("数値型に強制変換するカラム名 (カンマ区切り)", placeholder="例: 月間乗車回数, 年齢, 総合満足度")
-    outlier_handling = st.checkbox("IQR法による異常値フラグ (is_outlier) の付与を行う", value=True)
+    numeric_cols_input = st.text_input("📊 数値型 (int/float) に変換", placeholder="例: 月間乗車回数, 年齢, 総合満足度")
+    datetime_cols_input = st.text_input("📅 日付型 (datetime) に変換", placeholder="例: 利用日, 登録日時")
+    string_cols_input = st.text_input("🔤 文字列型 (str) に変換・保持", placeholder="例: 顧客ID, 最寄駅")
+    
+    outlier_handling = st.checkbox("数値型カラムに対し、IQR法による異常値フラグ (is_outlier) の付与を行う", value=True)
 
     if st.button("🚀 フェーズ2のコードを生成", type="primary"):
-        code2 = ""
+        code2 = "# 1. データ型の適正化\n"
+        has_input = False
+
         if numeric_cols_input.strip():
-            code2 += "# 1. データ型の適正化\n"
+            has_input = True
             code2 += f"num_cols = {parse_input(numeric_cols_input)}\n"
             code2 += "for col in num_cols:\n"
             code2 += "    if col in df.columns:\n"
             code2 += "        df[col] = pd.to_numeric(df[col], errors='coerce')\n\n"
             
-            if outlier_handling:
-                code2 += "# 2. 異常値フラグ付与\n"
+        if datetime_cols_input.strip():
+            has_input = True
+            code2 += f"date_cols = {parse_input(datetime_cols_input)}\n"
+            code2 += "for col in date_cols:\n"
+            code2 += "    if col in df.columns:\n"
+            code2 += "        df[col] = pd.to_datetime(df[col], errors='coerce')\n\n"
+
+        if string_cols_input.strip():
+            has_input = True
+            code2 += f"str_cols = {parse_input(string_cols_input)}\n"
+            code2 += "for col in str_cols:\n"
+            code2 += "    if col in df.columns:\n"
+            code2 += "        df[col] = df[col].astype(str)\n\n"
+
+        if has_input:
+            if outlier_handling and numeric_cols_input.strip():
+                code2 += "# 2. 異常値フラグ付与 (数値型カラムのみ対象)\n"
                 code2 += "target_num_cols = [c for c in num_cols if c in df.columns]\n"
                 code2 += "df['is_outlier'] = 0\n"
                 code2 += "for col in target_num_cols:\n"
@@ -96,61 +114,98 @@ with tabs[1]:
                 code2 += "    df.loc[outlier_cond, 'is_outlier'] = 1\n\n"
 
             code2 += "# 3. 変換後の最終確認\n"
-            code2 += "print('▼ 基本統計量 (数値変換後の状況確認)')\n"
-            code2 += "display(df.describe())\n"
+            code2 += "print('▼ 変換後のデータ型')\n"
+            code2 += "display(df.dtypes)\n"
+            code2 += "print('\\n▼ 基本統計量 (全体)')\n"
+            code2 += "display(df.describe(include='all'))\n"
 
             st.markdown("---")
-            st.write("💡 **【アクション】 以下のコードを実行し、データが正しく数値化されたことを確認してください。**")
+            st.write("💡 **【アクション】 以下のコードを実行し、データ型が正しく変換されたことを確認してください。**")
             st.code(code2, language="python")
         else:
-            st.error("数値化するカラム名を入力してください。")
+            st.error("少なくとも1つのカラム名を入力してください。")
 
 # =========================================================
 # フェーズ3: 分析・可視化 ➡️ 【傾向の確認】へ
 # =========================================================
 with tabs[2]:
-    st.header("3. データの抽出と構造的可視化")
+    st.header("3. データの絞り込みと構造的可視化")
+    st.write("※綺麗なデータを使って、対象を絞り込み仮説を立てるための可視化を行います。")
     
-    query_input = st.text_input("SQL風抽出条件 (空欄で全件対象)", placeholder="例: 月間乗車回数 >= 10 and 最寄駅 == '阿佐ヶ谷'")
+    st.subheader("データの絞り込み (オプション)")
+    col_f1, col_f2, col_f3 = st.columns(3)
     
+    with col_f1:
+        st.write("📅 日付で絞り込む")
+        filter_date_col = st.text_input("日付カラム名", placeholder="例: 利用日")
+        filter_date_start = st.text_input("開始日 (YYYY-MM-DD)", placeholder="例: 2026-01-01")
+        filter_date_end = st.text_input("終了日 (YYYY-MM-DD)", placeholder="例: 2026-12-31")
+        
+    with col_f2:
+        st.write("📊 数値で絞り込む")
+        filter_num_col = st.text_input("数値カラム名", placeholder="例: 月間乗車回数")
+        filter_num_op = st.selectbox("条件", ["<=", ">=", "==", "<", ">"])
+        filter_num_val = st.text_input("値 (数値)", placeholder="例: 10")
+        
+    with col_f3:
+        st.write("🔤 カテゴリで絞り込む")
+        filter_cat_col = st.text_input("文字列カラム名", placeholder="例: 最寄駅")
+        filter_cat_val = st.text_input("一致する値", placeholder="例: 阿佐ヶ谷")
+
+    st.markdown("---")
     st.subheader("可視化設定")
     x_col = st.text_input("X軸のカラム名", placeholder="例: 月間乗車回数")
     y_col = st.text_input("Y軸のカラム名 (数値推奨)", placeholder="例: 総合満足度")
-    chart_type = st.radio("グラフの種類", ["散布図", "箱ひげ図", "棒グラフ"])
+    chart_type = st.radio("グラフの種類", ["散布図", "箱ひげ図", "棒グラフ", "折れ線グラフ (時系列用)"])
     color_outlier = st.checkbox("異常値フラグ (is_outlier) で色分けする", value=True)
 
     if st.button("🚀 フェーズ3のコードを生成", type="primary"):
-        code3 = ""
-        if query_input.strip():
-            code3 += f"# 1. 条件抽出\n"
-            code3 += f"target_df = df.query(\"{query_input.strip()}\").copy()\n"
-            code3 += "print(f'抽出件数: {len(target_df)}件')\n\n"
-        else:
-            code3 += "# 1. 対象データ (全件)\n"
-            code3 += "target_df = df.copy()\n\n"
+        code3 = "# 1. データの絞り込み\n"
+        code3 += "target_df = df.copy()\n\n"
+        
+        # 絞り込みコードの生成
+        if filter_date_col and (filter_date_start or filter_date_end):
+            if filter_date_start:
+                code3 += f"target_df = target_df[target_df['{filter_date_col.strip()}'] >= '{filter_date_start.strip()}']\n"
+            if filter_date_end:
+                code3 += f"target_df = target_df[target_df['{filter_date_col.strip()}'] <= '{filter_date_end.strip()}']\n"
+                
+        if filter_num_col and filter_num_val:
+            code3 += f"target_df = target_df[target_df['{filter_num_col.strip()}'] {filter_num_op} {filter_num_val.strip()}]\n"
+            
+        if filter_cat_col and filter_cat_val:
+            code3 += f"target_df = target_df[target_df['{filter_cat_col.strip()}'] == '{filter_cat_val.strip()}']\n"
 
+        code3 += "print(f'絞り込み後の対象件数: {len(target_df)}件')\n\n"
+
+        # 可視化コードの生成
         if x_col and y_col:
             code3 += "# 2. 構造的可視化 (Plotly)\n"
+            code3 += "if len(target_df) > 0:\n"
             if color_outlier:
-                code3 += "if 'is_outlier' in target_df.columns:\n"
-                code3 += "    target_df['データ区分'] = target_df['is_outlier'].map({0: '正常値', 1: '異常値'})\n"
-                code3 += "    color_col = 'データ区分'\n"
-                code3 += "    color_map = {'正常値': '#1f77b4', '異常値': '#d62728'}\n"
-                code3 += "else:\n"
+                code3 += "    if 'is_outlier' in target_df.columns:\n"
+                code3 += "        target_df['データ区分'] = target_df['is_outlier'].map({0: '正常値', 1: '異常値'})\n"
+                code3 += "        color_col = 'データ区分'\n"
+                code3 += "        color_map = {'正常値': '#1f77b4', '異常値': '#d62728'}\n"
+                code3 += "    else:\n"
+                code3 += "        color_col = None\n"
+                code3 += "        color_map = None\n\n"
+            else:
                 code3 += "    color_col = None\n"
                 code3 += "    color_map = None\n\n"
-            else:
-                code3 += "color_col = None\n"
-                code3 += "color_map = None\n\n"
 
             if chart_type == "散布図":
-                code3 += f"fig = px.scatter(target_df, x='{x_col.strip()}', y='{y_col.strip()}', color=color_col, color_discrete_map=color_map, template='plotly_white')\n"
+                code3 += f"    fig = px.scatter(target_df, x='{x_col.strip()}', y='{y_col.strip()}', color=color_col, color_discrete_map=color_map, template='plotly_white')\n"
             elif chart_type == "箱ひげ図":
-                code3 += f"fig = px.box(target_df, x='{x_col.strip()}', y='{y_col.strip()}', color=color_col, color_discrete_map=color_map, template='plotly_white')\n"
+                code3 += f"    fig = px.box(target_df, x='{x_col.strip()}', y='{y_col.strip()}', color=color_col, color_discrete_map=color_map, template='plotly_white')\n"
+            elif chart_type == "棒グラフ":
+                code3 += f"    fig = px.bar(target_df, x='{x_col.strip()}', y='{y_col.strip()}', color=color_col, color_discrete_map=color_map, template='plotly_white')\n"
             else:
-                code3 += f"fig = px.bar(target_df, x='{x_col.strip()}', y='{y_col.strip()}', color=color_col, color_discrete_map=color_map, template='plotly_white')\n"
+                code3 += f"    fig = px.line(target_df, x='{x_col.strip()}', y='{y_col.strip()}', color=color_col, color_discrete_map=color_map, template='plotly_white')\n"
             
-            code3 += "fig.show()\n"
+            code3 += "    fig.show()\n"
+            code3 += "else:\n"
+            code3 += "    print('条件に合致するデータが0件のためグラフは描画されません。')\n"
 
         if code3:
             st.markdown("---")
