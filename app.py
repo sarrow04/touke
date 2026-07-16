@@ -3,181 +3,178 @@ import streamlit as st
 # ---------------------------------------------------------
 # ページ設定
 # ---------------------------------------------------------
-st.set_page_config(page_title="Secure Code Generator", layout="wide")
-st.title("🛠️ Python分析コード自動生成アプリ (高セキュリティ版)")
-st.write("データを読み込まず、設定項目の選択と入力のみで最適な分析コードを発行します。")
+st.set_page_config(page_title="Colab 2-Step Code Generator", layout="wide")
+st.title("🛠️ 2段階コードジェネレーター (Google Colab専用)")
+st.write("データを読み込まず、フェーズごとに堅牢な分析コードを発行します。")
 
-# ---------------------------------------------------------
-# ステップ1: データ形式と基本設定
-# ---------------------------------------------------------
-st.header("1. 元データの設定")
-col_file1, col_file2 = st.columns(2)
-with col_file1:
-    file_type = st.radio("ファイル形式を選択", ["CSV", "Excel"])
-with col_file2:
-    file_name = st.text_input("読み込むファイル名", "data.csv" if file_type == "CSV" else "data.xlsx")
+tabs = st.tabs(["フェーズ1: 前処理・構造確認", "フェーズ2: 追加分析・モデリング"])
 
-st.info("💡 【標準搭載】 すべての文字列データに対する全角半角の統一（NFKC正規化）と空白削除のクレンジング処理は、自動でコードに組み込まれます。")
+# =========================================================
+# フェーズ1: 前処理・構造確認
+# =========================================================
+with tabs[0]:
+    st.header("1. データの読み込み設定")
+    col_file1, col_file2 = st.columns(2)
+    with col_file1:
+        file_type = st.radio("ファイル形式", ["CSV", "Excel"], key="file_type")
+    with col_file2:
+        file_name = st.text_input("Colabにアップロードするファイル名", "data.csv" if file_type == "CSV" else "data.xlsx")
 
-# ---------------------------------------------------------
-# ステップ2: 前処理・異常値ハンドリング
-# ---------------------------------------------------------
-st.header("2. 前処理と異常値ハンドリング")
-numeric_cols_input = st.text_input(
-    "数値型に強制変換するカラム名 (カンマ区切りで入力)", 
-    placeholder="例: 売上金額, 年齢, 月間乗車回数"
-)
+    st.header("2. 前処理ルールの設定")
+    numeric_cols_input = st.text_input(
+        "数値型に強制変換するカラム名 (カンマ区切り)", 
+        placeholder="例: 売上金額, 年齢, 月間乗車回数"
+    )
+    outlier_handling = st.checkbox("IQR法による異常値フラグ (is_outlier) の付与を行う", value=True)
 
-outlier_handling = st.radio(
-    "IQR法による異常値 (外れ値) の処理方針", 
-    ["処理しない", "異常フラグ(is_outlier)のカラムを追加する (推奨)", "異常値を含む行を除外する"]
-)
+    if st.button("🚀 フェーズ1のコードを生成", type="primary"):
+        def parse_input(text):
+            if not text: return "[]"
+            return "[" + ", ".join([f"'{x.strip()}'" for x in text.split(",")]) + "]"
 
-# ---------------------------------------------------------
-# ステップ3: モデリング・時系列予測の設定
-# ---------------------------------------------------------
-st.header("3. 機械学習 / 時系列モデルの選択")
-
-task_type = st.radio("分析タスク", ["回帰 (数値を予測)", "分類 (カテゴリを予測)", "時系列予測 (未来の推移を予測)"])
-
-col_target, col_features = st.columns(2)
-with col_target:
-    target_col = st.text_input("目的変数 (予測したいカラム名)", placeholder="例: 総合満足度")
-with col_features:
-    if task_type != "時系列予測 (未来の推移を予測)":
-        feature_cols_input = st.text_input("説明変数 (予測の手がかりにするカラム名・カンマ区切り)", placeholder="例: 年齢, 月間乗車回数, 平均遅延遭遇率")
-    else:
-        time_col = st.text_input("日付・時刻のカラム名", placeholder="例: 登録日")
-
-if task_type == "回帰 (数値を予測)":
-    model_selection = st.selectbox("使用するモデル", ["LightGBM (LGBMRegressor) - 中〜大規模データ推奨", "RandomForestRegressor - 小規模データ推奨", "XGBRegressor", "LinearRegression"])
-elif task_type == "分類 (カテゴリを予測)":
-    model_selection = st.selectbox("使用するモデル", ["LightGBM (LGBMClassifier) - 中〜大規模データ推奨", "RandomForestClassifier - 小規模データ推奨", "XGBClassifier", "LogisticRegression"])
-else:
-    model_selection = st.selectbox("使用するモデル", ["Prophet - 汎用・トレンド予測", "SARIMA (statsmodels) - 厳密な統計モデル"])
-
-# ---------------------------------------------------------
-# コード生成処理
-# ---------------------------------------------------------
-if st.button("🚀 実行可能なPythonコードを生成", type="primary"):
-    st.markdown("---")
-    st.subheader("生成されたコード")
-    
-    # 入力されたカンマ区切りの文字列をリスト形式に変換するヘルパー関数
-    def parse_input(text):
-        if not text: return "[]"
-        items = [f"'{x.strip()}'" for x in text.split(",")]
-        return "[" + ", ".join(items) + "]"
-
-    # コードの組み立て
-    code = f"import pandas as pd\nimport numpy as np\nimport unicodedata\nimport plotly.express as px\n\n"
-    code += f"# 1. データの読み込み (0落ち防止のためすべて文字列として読み込み)\n"
-    
-    if file_type == "CSV":
-        code += f"df = pd.read_csv('{file_name}', dtype=str)\n\n"
-    else:
-        code += f"df = pd.read_excel('{file_name}', dtype=str)\n\n"
-        
-    code += "# 2. 文字列の自動クレンジング (全角半角の統一・空白削除)\n"
-    code += "def clean_text(text):\n"
-    code += "    if pd.isnull(text): return text\n"
-    code += "    text = unicodedata.normalize('NFKC', str(text))\n"
-    code += "    return text.strip()\n\n"
-    code += "str_cols = df.select_dtypes(include=['object']).columns\n"
-    code += "for col in str_cols:\n"
-    code += "    df[col] = df[col].apply(clean_text)\n\n"
-        
-    if numeric_cols_input.strip():
-        code += "# 3. データ型の適正化 (数値型への変換)\n"
-        code += f"num_cols = {parse_input(numeric_cols_input)}\n"
-        code += "for col in num_cols:\n"
-        code += "    if col in df.columns:\n"
-        code += "        df[col] = pd.to_numeric(df[col], errors='coerce')\n"
-        code += "df = df.dropna(subset=[c for c in num_cols if c in df.columns])\n\n"
-        
-    if outlier_handling != "処理しない" and numeric_cols_input.strip():
-        code += "# 4. 異常値 (外れ値) の検出とハンドリング (IQR法)\n"
-        code += "target_num_cols = [c for c in num_cols if c in df.columns]\n"
-        if outlier_handling == "異常フラグ(is_outlier)のカラムを追加する (推奨)":
-            code += "df['is_outlier'] = 0\n"
-            code += "for col in target_num_cols:\n"
-            code += "    q1, q3 = df[col].quantile(0.25), df[col].quantile(0.75)\n"
-            code += "    iqr = q3 - q1\n"
-            code += "    lower_bound, upper_bound = q1 - 1.5 * iqr, q3 + 1.5 * iqr\n"
-            code += "    outlier_cond = (df[col] < lower_bound) | (df[col] > upper_bound)\n"
-            code += "    df.loc[outlier_cond, 'is_outlier'] = 1\n\n"
-            code += "# 異常値のハイライト可視化 (Plotly)\n"
-            code += "df['データ区分'] = df['is_outlier'].map({0: '正常値', 1: '異常値'})\n"
-            code += "if len(target_num_cols) >= 2:\n"
-            code += "    fig = px.scatter(df, x=target_num_cols[0], y=target_num_cols[1], color='データ区分',\n"
-            code += "                     color_discrete_map={'正常値': '#1f77b4', '異常値': '#d62728'},\n"
-            code += "                     template='plotly_white', title='異常値ハイライト')\n"
-            code += "    fig.show()\n\n"
+        code1 = f"import pandas as pd\nimport numpy as np\nimport unicodedata\nimport plotly.express as px\n\n"
+        code1 += f"# 1. データの読み込み\n"
+        if file_type == "CSV":
+            code1 += f"df = pd.read_csv('{file_name}', dtype=str)\n\n"
         else:
-            code += "for col in target_num_cols:\n"
-            code += "    q1, q3 = df[col].quantile(0.25), df[col].quantile(0.75)\n"
-            code += "    iqr = q3 - q1\n"
-            code += "    lower_bound, upper_bound = q1 - 1.5 * iqr, q3 + 1.5 * iqr\n"
-            code += "    df = df[(df[col] >= lower_bound) & (df[col] <= upper_bound)]\n\n"
-
-    code += "# 5. 機械学習 / 時系列モデルの構築\n"
-    if task_type in ["回帰 (数値を予測)", "分類 (カテゴリを予測)"]:
-        code += f"features = {parse_input(feature_cols_input)}\n"
-        code += f"target = '{target_col.strip()}'\n\n"
-        code += "from sklearn.model_selection import train_test_split\n"
-        code += "X = df[features]\n"
-        code += "y = df[target]\n"
-        code += "X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)\n\n"
-        
-        if "LGBM" in model_selection:
-            code += "import lightgbm as lgb\n"
-            if "Regressor" in model_selection:
-                code += "model = lgb.LGBMRegressor()\n"
-            else:
-                code += "model = lgb.LGBMClassifier()\n"
-        elif "RandomForest" in model_selection:
-            code += "from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier\n"
-            if "Regressor" in model_selection:
-                code += "model = RandomForestRegressor(random_state=42)\n"
-            else:
-                code += "model = RandomForestClassifier(random_state=42)\n"
-        elif "XGB" in model_selection:
-            code += "import xgboost as xgb\n"
-            if "Regressor" in model_selection:
-                code += "model = xgb.XGBRegressor(random_state=42)\n"
-            else:
-                code += "model = xgb.XGBClassifier(random_state=42)\n"
-        else:
-            code += "from sklearn.linear_model import LinearRegression, LogisticRegression\n"
-            if "LinearRegression" in model_selection:
-                code += "model = LinearRegression()\n"
-            else:
-                code += "model = LogisticRegression()\n"
+            code1 += f"df = pd.read_excel('{file_name}', dtype=str)\n\n"
             
-        code += "model.fit(X_train, y_train)\n"
-        code += "print(f'モデル学習完了: {model.score(X_test, y_test):.4f} (Accuracy/R2 Score)')\n"
-        
-    elif task_type == "時系列予測 (未来の推移を予測)":
-        if "Prophet" in model_selection:
-            code += "from prophet import Prophet\n"
-            code += f"ts_df = df[['{time_col.strip()}', '{target_col.strip()}']].rename(columns={{'{time_col.strip()}': 'ds', '{target_col.strip()}': 'y'}})\n"
-            code += "ts_df['ds'] = pd.to_datetime(ts_df['ds'])\n"
-            code += "ts_df['y'] = pd.to_numeric(ts_df['y'])\n"
-            code += "ts_df = ts_df.dropna()\n\n"
-            code += "model = Prophet()\n"
-            code += "model.fit(ts_df)\n"
-            code += "future = model.make_future_dataframe(periods=30)\n"
-            code += "forecast = model.predict(future)\n"
-            code += "fig = model.plot(forecast)\n"
-        elif "SARIMA" in model_selection:
-            code += "import statsmodels.api as sm\n"
-            code += f"ts_df = df[['{time_col.strip()}', '{target_col.strip()}']].copy()\n"
-            code += f"ts_df['{time_col.strip()}'] = pd.to_datetime(ts_df['{time_col.strip()}'])\n"
-            code += f"ts_df = ts_df.set_index('{time_col.strip()}')\n"
-            code += f"ts_df['{target_col.strip()}'] = pd.to_numeric(ts_df['{target_col.strip()}'])\n"
-            code += "ts_df = ts_df.dropna()\n\n"
-            code += f"model = sm.tsa.statespace.SARIMAX(ts_df['{target_col.strip()}'], order=(1, 1, 1), seasonal_order=(1, 1, 1, 12))\n"
-            code += "results = model.fit()\n"
-            code += "print(results.summary())\n"
+        code1 += "# 2. 文字列の自動クレンジング (全角半角の統一・空白削除)\n"
+        code1 += "def clean_text(text):\n"
+        code1 += "    if pd.isnull(text): return text\n"
+        code1 += "    text = unicodedata.normalize('NFKC', str(text))\n"
+        code1 += "    return text.strip()\n\n"
+        code1 += "str_cols = df.select_dtypes(include=['object']).columns\n"
+        code1 += "for col in str_cols:\n"
+        code1 += "    df[col] = df[col].apply(clean_text)\n\n"
+            
+        if numeric_cols_input.strip():
+            code1 += "# 3. データ型の適正化 (数値型への変換)\n"
+            code1 += f"num_cols = {parse_input(numeric_cols_input)}\n"
+            code1 += "for col in num_cols:\n"
+            code1 += "    if col in df.columns:\n"
+            code1 += "        df[col] = pd.to_numeric(df[col], errors='coerce')\n\n"
+            
+            if outlier_handling:
+                code1 += "# 4. 異常値の検出とフラグ付与 (IQR法)\n"
+                code1 += "target_num_cols = [c for c in num_cols if c in df.columns]\n"
+                code1 += "df['is_outlier'] = 0\n"
+                code1 += "for col in target_num_cols:\n"
+                code1 += "    q1, q3 = df[col].quantile(0.25), df[col].quantile(0.75)\n"
+                code1 += "    iqr = q3 - q1\n"
+                code1 += "    lower_bound, upper_bound = q1 - 1.5 * iqr, q3 + 1.5 * iqr\n"
+                code1 += "    outlier_cond = (df[col] < lower_bound) | (df[col] > upper_bound)\n"
+                code1 += "    df.loc[outlier_cond, 'is_outlier'] = 1\n\n"
 
-    st.code(code, language="python")
+        code1 += "# 5. 処理結果の確認 (Colabでの目視用)\n"
+        code1 += "print('▼ データ型と欠損値の状況')\n"
+        code1 += "display(df.info())\n"
+        code1 += "print('\\n▼ 処理後データのプレビュー')\n"
+        code1 += "display(df.head(5))\n"
+
+        st.markdown("---")
+        st.write("**以下のコードをColabの最初のセルに貼り付けて実行し、データが想定通りか確認してください。**")
+        st.code(code1, language="python")
+
+# =========================================================
+# フェーズ2: 追加分析・モデリング
+# =========================================================
+with tabs[1]:
+    st.header("追加分析の設定")
+    st.write("※フェーズ1のコードが実行され、変数 `df` が存在することを前提とします。")
+    
+    task_type = st.radio("実行するタスク", ["SQL風データ抽出", "機械学習 (回帰/分類)とSHAP要因分析", "統計検定 (T検定)"])
+    
+    if task_type == "SQL風データ抽出":
+        query_input = st.text_area("Pandasクエリ文", placeholder="例: 年齢 >= 30 and 顧客ランク == 'A'")
+        
+    elif task_type == "機械学習 (回帰/分類)とSHAP要因分析":
+        ml_task = st.radio("予測タイプ", ["数値を予測 (回帰)", "カテゴリを予測 (分類)"])
+        target_col = st.text_input("目的変数 (予測したいカラム名)")
+        feature_cols_input = st.text_input("説明変数 (カンマ区切り)")
+        
+    elif task_type == "統計検定 (T検定)":
+        group_col = st.text_input("グループ分けに使うカテゴリ変数 (例: 最寄駅)")
+        val_col = st.text_input("比較する数値変数 (例: 総合満足度)")
+        st.caption("※対象のカテゴリ内に存在する2つのユニークな値の平均を比較します。")
+
+    if st.button("🚀 フェーズ2のコードを生成", type="primary"):
+        st.markdown("---")
+        code2 = ""
+        
+        if task_type == "SQL風データ抽出" and query_input:
+            code2 += "# --- SQL風データ抽出 ---\n"
+            code2 += f"query_str = \"{query_input.strip()}\"\n"
+            code2 += "filtered_df = df.query(query_str)\n"
+            code2 += "print(f'抽出結果: {len(filtered_df)}件')\n"
+            code2 += "display(filtered_df.head())\n"
+            
+        elif task_type == "機械学習 (回帰/分類)とSHAP要因分析" and target_col and feature_cols_input:
+            def parse_input_ml(text):
+                return "[" + ", ".join([f"'{x.strip()}'" for x in text.split(",")]) + "]"
+                
+            code2 += "# --- 機械学習モデリングとSHAP値可視化 ---\n"
+            code2 += "import shap\n"
+            code2 += "from sklearn.model_selection import train_test_split\n"
+            if ml_task == "数値を予測 (回帰)":
+                code2 += "from sklearn.ensemble import RandomForestRegressor\n"
+                code2 += "model = RandomForestRegressor(n_estimators=50, random_state=42)\n"
+            else:
+                code2 += "from sklearn.ensemble import RandomForestClassifier\n"
+                code2 += "model = RandomForestClassifier(n_estimators=50, random_state=42)\n\n"
+                
+            code2 += f"features = {parse_input_ml(feature_cols_input)}\n"
+            code2 += f"target = '{target_col.strip()}'\n\n"
+            
+            code2 += "# 欠損値を除外して学習データを準備\n"
+            code2 += "ml_data = df[features + [target]].dropna()\n"
+            code2 += "X = ml_data[features]\n"
+            code2 += "y = ml_data[target]\n\n"
+            
+            code2 += "X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)\n"
+            code2 += "model.fit(X_train, y_train)\n"
+            code2 += "print(f'モデルスコア: {model.score(X_test, y_test):.4f}')\n\n"
+            
+            code2 += "# SHAP値によるエビデンス可視化\n"
+            code2 += "explainer = shap.TreeExplainer(model)\n"
+            code2 += "shap_values = explainer.shap_values(X)\n"
+            code2 += "shap_importance = np.abs(shap_values).mean(axis=0)\n"
+            code2 += "importance_df = pd.DataFrame({'説明変数': features, '平均SHAP値': shap_importance}).sort_values(by='平均SHAP値', ascending=True)\n\n"
+            
+            code2 += "fig_shap = px.bar(importance_df, x='平均SHAP値', y='説明変数', orientation='h',\n"
+            code2 += "                  title='予測値への影響度 (SHAP)', template='plotly_white')\n"
+            code2 += "fig_shap.show()\n"
+            
+        elif task_type == "統計検定 (T検定)" and group_col and val_col:
+            code2 += "# --- 2群間の統計検定 (T検定) ---\n"
+            code2 += "from scipy import stats\n\n"
+            code2 += f"group_col = '{group_col.strip()}'\n"
+            code2 += f"val_col = '{val_col.strip()}'\n\n"
+            
+            code2 += "# 欠損値を除外してユニークなグループを取得\n"
+            code2 += "clean_df = df.dropna(subset=[group_col, val_col])\n"
+            code2 += "unique_groups = clean_df[group_col].unique()\n\n"
+            
+            code2 += "if len(unique_groups) >= 2:\n"
+            code2 += "    group_a, group_b = unique_groups[0], unique_groups[1]\n"
+            code2 += "    data_a = clean_df[clean_df[group_col] == group_a][val_col]\n"
+            code2 += "    data_b = clean_df[clean_df[group_col] == group_b][val_col]\n\n"
+            code2 += "    t_stat, p_val = stats.ttest_ind(data_a, data_b, equal_var=False)\n"
+            code2 += "    print(f'【T検定】 {group_a} vs {group_b}')\n"
+            code2 += "    print(f'p値: {p_val:.5f}')\n"
+            code2 += "    if p_val < 0.05:\n"
+            code2 += "        print('結果: 統計的に有意な差があります (p < 0.05)')\n"
+            code2 += "    else:\n"
+            code2 += "        print('結果: 統計的に有意な差は認められません')\n\n"
+            code2 += "    # 比較用ボックスプロット\n"
+            code2 += "    fig_box = px.box(clean_df[clean_df[group_col].isin([group_a, group_b])], \n"
+            code2 += "                     x=group_col, y=val_col, template='plotly_white', title='グループ間の分布比較')\n"
+            code2 += "    fig_box.show()\n"
+            code2 += "else:\n"
+            code2 += "    print('グループが2つ以上存在しません。')\n"
+
+        if code2:
+            st.write("**以下のコードをColabの次のセルに貼り付けて実行してください。**")
+            st.code(code2, language="python")
+        else:
+            st.warning("必要な項目を入力してください。")
