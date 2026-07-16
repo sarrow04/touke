@@ -48,14 +48,21 @@ with tabs[0]:
         code1 += "for col in str_cols:\n"
         code1 += "    df[col] = df[col].apply(clean_text)\n\n"
 
-        code1 += "# 3. データ構造の初期プレビュー (ここでカラム名と状態を確認)\n"
-        code1 += "print('▼ 現在のデータ型とカラム一覧')\n"
+        code1 += "# 3. データ構造の初期プレビュー\n"
+        code1 += "print('▼ 現在のデータ型とメモリ使用量')\n"
         code1 += "display(df.info())\n"
-        code1 += "print('\\n▼ データのプレビュー')\n"
+        
+        # --- 今回追加した「データ個数・欠損値」の確認ブロック ---
+        code1 += "print('\\n▼ 各カラムのデータの種類数(ユニーク数)と欠損値数')\n"
+        code1 += "summary_df = pd.DataFrame({'ユニークなデータの種類数': df.nunique(), '欠損値の数': df.isnull().sum()})\n"
+        code1 += "display(summary_df)\n"
+        # ----------------------------------------------------
+        
+        code1 += "print('\\n▼ データのプレビュー (先頭5行)')\n"
         code1 += "display(df.head(5))\n"
 
         st.markdown("---")
-        st.write("💡 **【アクション】 以下のコードをColabで実行し、`info()` の出力から正確な「カラム名」を確認してください。**")
+        st.write("💡 **【アクション】 以下のコードをColabで実行し、正確な「カラム名」と「データの種類数」を確認してください。**")
         st.code(code1, language="python")
 
 # =========================================================
@@ -63,7 +70,7 @@ with tabs[0]:
 # =========================================================
 with tabs[1]:
     st.header("2. データ型の適正化と異常値ハンドリング")
-    st.warning("⚠️ フェーズ1で出力された `df.info()` のカラム名を見ながら、正確に入力してください。")
+    st.warning("⚠️ フェーズ1で出力された結果を見ながら、正確にカラム名を入力してください。")
     
     numeric_cols_input = st.text_input("数値型に強制変換するカラム名 (カンマ区切り)", placeholder="例: 月間乗車回数, 年齢, 総合満足度")
     outlier_handling = st.checkbox("IQR法による異常値フラグ (is_outlier) の付与を行う", value=True)
@@ -93,7 +100,7 @@ with tabs[1]:
             code2 += "display(df.describe())\n"
 
             st.markdown("---")
-            st.write("💡 **【アクション】 以下のコードを次のセルで実行し、データが正しく数値化されたことを確認してください。**")
+            st.write("💡 **【アクション】 以下のコードを実行し、データが正しく数値化されたことを確認してください。**")
             st.code(code2, language="python")
         else:
             st.error("数値化するカラム名を入力してください。")
@@ -103,7 +110,6 @@ with tabs[1]:
 # =========================================================
 with tabs[2]:
     st.header("3. データの抽出と構造的可視化")
-    st.write("※綺麗なデータを使って、仮説を立てるための可視化を行います。")
     
     query_input = st.text_input("SQL風抽出条件 (空欄で全件対象)", placeholder="例: 月間乗車回数 >= 10 and 最寄駅 == '阿佐ヶ谷'")
     
@@ -158,7 +164,6 @@ with tabs[2]:
 # =========================================================
 with tabs[3]:
     st.header("4. エビデンスの導出 (モデリング・統計検定)")
-    st.write("※視覚的に把握した傾向を、統計的・機械学習的なアプローチで証明します。")
     
     task_type = st.radio("実行するタスク", ["機械学習 (SHAP要因分析)", "統計検定 (2群間のT検定)"])
     
