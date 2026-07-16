@@ -4,7 +4,7 @@ import streamlit as st
 # ページ設定
 # ---------------------------------------------------------
 st.set_page_config(page_title="Colab 4-Step Pipeline Generator", layout="wide")
-st.title("🛠️ 4段階確実実行型コードジェネレーター (Colab専用)")
+st.title("🛠️ 4段階確実実行型コードジェネレーター (japanize-matplotlib版)")
 st.write("データの実態をColab上で確認しながら、論理的かつ安全に分析ステップを組み立てます。")
 
 tabs = st.tabs([
@@ -19,7 +19,7 @@ def parse_input(text):
     return "[" + ", ".join([f"'{x.strip()}'" for x in text.split(",")]) + "]"
 
 # =========================================================
-# フェーズ1: 読込・プレビュー ➡️ 【カラム名の確認】へ
+# フェーズ1: 読込・プレビュー ➡️ カラム名の確認へ
 # =========================================================
 with tabs[0]:
     st.header("1. データの読み込みと初期プレビュー")
@@ -32,7 +32,14 @@ with tabs[0]:
         file_name = st.text_input("Colabにアップロードしたファイル名", "data.csv" if file_type == "CSV" else "data.xlsx")
 
     if st.button("🚀 フェーズ1のコードを生成", type="primary"):
-        code1 = f"import pandas as pd\nimport numpy as np\nimport unicodedata\nimport plotly.express as px\n\n"
+        # ▼ japanize-matplotlibのインストールを先頭に組み込む
+        code1 = "!pip install japanize-matplotlib\n\n"
+        code1 += "import pandas as pd\nimport numpy as np\nimport unicodedata\n"
+        code1 += "import matplotlib.pyplot as plt\nimport seaborn as sns\nimport japanize_matplotlib\n\n"
+        code1 += "# グラフのスタイル設定 (白背景のグリッド)\n"
+        code1 += "sns.set_style('whitegrid')\n"
+        code1 += "japanize_matplotlib.japanize()\n\n"
+
         code1 += f"# 1. データの読み込み (すべて文字列として取得)\n"
         if file_type == "CSV":
             code1 += f"df = pd.read_csv('{file_name}', dtype=str)\n\n"
@@ -60,11 +67,11 @@ with tabs[0]:
         code1 += "display(df.head(5))\n"
 
         st.markdown("---")
-        st.write("💡 **【アクション】 以下のコードをColabで実行し、正確な「カラム名」と「データの種類数」を確認してください。**")
+        st.write("💡 ( **アクション** ) 以下のコードをColabで実行し、正確な「カラム名」と「データの種類数」を確認してください。")
         st.code(code1, language="python")
 
 # =========================================================
-# フェーズ2: 型変換・異常値 ➡️ 【綺麗なデータ完成】へ
+# フェーズ2: 型変換・異常値 ➡️ 綺麗なデータ完成へ
 # =========================================================
 with tabs[1]:
     st.header("2. データ型の適正化と異常値ハンドリング")
@@ -120,17 +127,16 @@ with tabs[1]:
             code2 += "display(df.describe(include='all'))\n"
 
             st.markdown("---")
-            st.write("💡 **【アクション】 以下のコードを実行し、データ型が正しく変換されたことを確認してください。**")
+            st.write("💡 ( **アクション** ) 以下のコードを実行し、データ型が正しく変換されたことを確認してください。")
             st.code(code2, language="python")
         else:
             st.error("少なくとも1つのカラム名を入力してください。")
 
 # =========================================================
-# フェーズ3: 分析・可視化 ➡️ 【傾向の確認】へ
+# フェーズ3: 分析・可視化 ➡️ 傾向の確認へ
 # =========================================================
 with tabs[2]:
     st.header("3. データの絞り込みと構造的可視化")
-    st.write("※綺麗なデータを使って、対象を絞り込み仮説を立てるための可視化を行います。")
     
     st.subheader("データの絞り込み (オプション)")
     col_f1, col_f2, col_f3 = st.columns(3)
@@ -156,14 +162,18 @@ with tabs[2]:
     st.subheader("可視化設定")
     x_col = st.text_input("X軸のカラム名", placeholder="例: 月間乗車回数")
     y_col = st.text_input("Y軸のカラム名 (数値推奨)", placeholder="例: 総合満足度")
-    chart_type = st.radio("グラフの種類", ["散布図", "箱ひげ図", "棒グラフ", "折れ線グラフ (時系列用)"])
+    
+    chart_types = st.multiselect(
+        "グラフの種類 (複数選択可)", 
+        ["散布図", "箱ひげ図", "棒グラフ", "折れ線グラフ (時系列用)"], 
+        default=["散布図"]
+    )
     color_outlier = st.checkbox("異常値フラグ (is_outlier) で色分けする", value=True)
 
     if st.button("🚀 フェーズ3のコードを生成", type="primary"):
         code3 = "# 1. データの絞り込み\n"
         code3 += "target_df = df.copy()\n\n"
         
-        # 絞り込みコードの生成
         if filter_date_col and (filter_date_start or filter_date_end):
             if filter_date_start:
                 code3 += f"target_df = target_df[target_df['{filter_date_col.strip()}'] >= '{filter_date_start.strip()}']\n"
@@ -178,44 +188,51 @@ with tabs[2]:
 
         code3 += "print(f'絞り込み後の対象件数: {len(target_df)}件')\n\n"
 
-        # 可視化コードの生成
-        if x_col and y_col:
-            code3 += "# 2. 構造的可視化 (Plotly)\n"
+        if x_col and y_col and chart_types:
+            code3 += "# 2. 構造的可視化 (Seaborn)\n"
             code3 += "if len(target_df) > 0:\n"
             if color_outlier:
                 code3 += "    if 'is_outlier' in target_df.columns:\n"
                 code3 += "        target_df['データ区分'] = target_df['is_outlier'].map({0: '正常値', 1: '異常値'})\n"
-                code3 += "        color_col = 'データ区分'\n"
-                code3 += "        color_map = {'正常値': '#1f77b4', '異常値': '#d62728'}\n"
+                code3 += "        hue_col = 'データ区分'\n"
+                code3 += "        palette = {'正常値': '#1f77b4', '異常値': '#d62728'}\n"
                 code3 += "    else:\n"
-                code3 += "        color_col = None\n"
-                code3 += "        color_map = None\n\n"
+                code3 += "        hue_col = None\n"
+                code3 += "        palette = None\n\n"
             else:
-                code3 += "    color_col = None\n"
-                code3 += "    color_map = None\n\n"
+                code3 += "    hue_col = None\n"
+                code3 += "    palette = None\n\n"
 
-            if chart_type == "散布図":
-                code3 += f"    fig = px.scatter(target_df, x='{x_col.strip()}', y='{y_col.strip()}', color=color_col, color_discrete_map=color_map, template='plotly_white')\n"
-            elif chart_type == "箱ひげ図":
-                code3 += f"    fig = px.box(target_df, x='{x_col.strip()}', y='{y_col.strip()}', color=color_col, color_discrete_map=color_map, template='plotly_white')\n"
-            elif chart_type == "棒グラフ":
-                code3 += f"    fig = px.bar(target_df, x='{x_col.strip()}', y='{y_col.strip()}', color=color_col, color_discrete_map=color_map, template='plotly_white')\n"
-            else:
-                code3 += f"    fig = px.line(target_df, x='{x_col.strip()}', y='{y_col.strip()}', color=color_col, color_discrete_map=color_map, template='plotly_white')\n"
-            
-            code3 += "    fig.show()\n"
-            code3 += "else:\n"
+            for idx, c_type in enumerate(chart_types):
+                code3 += f"    # --- {c_type} ---\n"
+                code3 += f"    plt.figure(figsize=(10, 6))\n"
+                if c_type == "散布図":
+                    code3 += f"    sns.scatterplot(data=target_df, x='{x_col.strip()}', y='{y_col.strip()}', hue=hue_col, palette=palette)\n"
+                elif c_type == "箱ひげ図":
+                    code3 += f"    sns.boxplot(data=target_df, x='{x_col.strip()}', y='{y_col.strip()}', hue=hue_col, palette=palette)\n"
+                elif c_type == "棒グラフ":
+                    code3 += f"    sns.barplot(data=target_df, x='{x_col.strip()}', y='{y_col.strip()}', hue=hue_col, palette=palette, errorbar=None)\n"
+                else:
+                    code3 += f"    sns.lineplot(data=target_df, x='{x_col.strip()}', y='{y_col.strip()}', hue=hue_col, palette=palette)\n"
+                
+                code3 += f"    plt.title('{c_type}: {x_col.strip()} vs {y_col.strip()}')\n"
+                code3 += f"    plt.tight_layout()\n"
+                code3 += f"    plt.show()\n\n"
+                
+        elif not chart_types:
+            code3 += "    print('グラフの種類が選択されていません。')\n"
+        else:
             code3 += "    print('条件に合致するデータが0件のためグラフは描画されません。')\n"
 
-        if code3:
+        if code3 and x_col and y_col:
             st.markdown("---")
-            st.write("💡 **【アクション】 以下のコードを実行し、データの傾向を分析してください。**")
+            st.write("💡 ( **アクション** ) 以下のコードを実行し、データの傾向を分析してください。")
             st.code(code3, language="python")
         else:
             st.warning("X軸とY軸のカラム名を入力してください。")
 
 # =========================================================
-# フェーズ4: モデリング・検定 ➡️ 【エビデンスの導出】へ
+# フェーズ4: モデリング・検定 ➡️ エビデンスの導出へ
 # =========================================================
 with tabs[3]:
     st.header("4. エビデンスの導出 (モデリング・統計検定)")
@@ -249,14 +266,17 @@ with tabs[3]:
             code4 += "model.fit(X_train, y_train)\n"
             code4 += "print(f'モデル精度 (R2 Score): {model.score(X_test, y_test):.4f}')\n\n"
             
-            code4 += "# SHAP値の計算と可視化\n"
+            code4 += "# SHAP値の計算と可視化 (Seabornを利用)\n"
             code4 += "explainer = shap.TreeExplainer(model)\n"
             code4 += "shap_values = explainer.shap_values(X)\n"
             code4 += "shap_importance = np.abs(shap_values).mean(axis=0)\n"
-            code4 += "importance_df = pd.DataFrame({'説明変数': features, '平均SHAP値': shap_importance}).sort_values(by='平均SHAP値', ascending=True)\n\n"
+            code4 += "importance_df = pd.DataFrame({'説明変数': features, '平均SHAP値': shap_importance}).sort_values(by='平均SHAP値', ascending=False)\n\n"
             
-            code4 += "fig_shap = px.bar(importance_df, x='平均SHAP値', y='説明変数', orientation='h', title='予測値への影響度 (SHAP)', template='plotly_white')\n"
-            code4 += "fig_shap.show()\n"
+            code4 += "plt.figure(figsize=(10, 6))\n"
+            code4 += "sns.barplot(data=importance_df, x='平均SHAP値', y='説明変数', color='steelblue')\n"
+            code4 += "plt.title('予測値への影響度 (SHAP)')\n"
+            code4 += "plt.tight_layout()\n"
+            code4 += "plt.show()\n"
             
         elif task_type == "統計検定 (2群間のT検定)" and group_col and val_col:
             code4 += "# --- 2群間の統計検定 (T検定) ---\n"
@@ -271,13 +291,19 @@ with tabs[3]:
             code4 += "    data_b = clean_df[clean_df[group_col] == group_b][val_col]\n\n"
             code4 += "    t_stat, p_val = stats.ttest_ind(data_a, data_b, equal_var=False)\n"
             code4 += "    print(f'【T検定】 {group_a} vs {group_b}')\n"
-            code4 += "    print(f'p値: {p_val:.5f} -> ', '有意差あり' if p_val < 0.05 else '有意差なし')\n"
+            code4 += "    print(f'p値: {p_val:.5f} -> ', '有意差あり' if p_val < 0.05 else '有意差なし')\n\n"
+            
+            code4 += "    plt.figure(figsize=(8, 5))\n"
+            code4 += "    sns.boxplot(data=clean_df[clean_df[group_col].isin([group_a, group_b])], x=group_col, y=val_col)\n"
+            code4 += "    plt.title('グループ間の分布比較')\n"
+            code4 += "    plt.tight_layout()\n"
+            code4 += "    plt.show()\n"
             code4 += "else:\n"
             code4 += "    print('比較対象のグループが不足しています。')\n"
 
         if code4:
             st.markdown("---")
-            st.write("💡 **【アクション】 以下のコードを実行し、分析の最終的なエビデンスを獲得してください。**")
+            st.write("💡 ( **アクション** ) 以下のコードを実行し、分析の最終的なエビデンスを獲得してください。")
             st.code(code4, language="python")
         else:
             st.warning("必要なカラム名を入力してください。")
