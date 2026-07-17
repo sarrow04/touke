@@ -3,59 +3,72 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-st.title("データ分析用：日付付き・汚れたCSV生成ツール")
+# ページ設定
+st.set_page_config(page_title="汚れたデータ生成アプリ", layout="wide")
 
-# 設定
-st.sidebar.header("設定")
-num_rows = st.sidebar.slider("行数", 20, 200, 50)
+st.title("データ分析練習用：汚れたCSV生成ツール")
 
-def generate_dirty_data_with_dates(rows):
-    # 1. 正しい日付の生成
+# サイドバー設定
+st.sidebar.header("データ生成パラメータ")
+num_rows = st.sidebar.slider("行数", 20, 500, 100)
+
+def generate_dirty_data(rows):
+    # 1. 基本データの生成
     base_date = datetime(2026, 1, 1)
     dates = [base_date + timedelta(days=np.random.randint(0, 100)) for _ in range(rows)]
     
-    data = {
+    df = pd.DataFrame({
         "Date": dates,
         "ID": range(1, rows + 1),
         "Price": np.random.randint(500, 5000, rows),
         "Category": np.random.choice(["イタリアン", "和食", "中華"], rows),
-    }
-    df = pd.DataFrame(data)
+    })
 
-    # 2. 日付の表記ゆれを注入（一部を文字列や異なる形式にする）
-    # 汚す場所をランダムに選定
-    dirty_indices = np.random.choice(df.index, size=int(rows * 0.2), replace=False)
-    
-    for idx in dirty_indices:
-        # ランダムな汚れ方（一部を文字列変換やフォーマット変更）
-        if np.random.rand() > 0.5:
-            df.at[idx, "Date"] = "2026/01/01" # スラッシュ区切り
-        else:
-            df.at[idx, "Date"] = "エラー" # 不正な値
+    # 2. 意図的な汚れの注入
+    # Date列に汚れ（文字列混入・表記ゆれ）
+    dirty_date_idx = np.random.choice(df.index, size=int(rows * 0.15), replace=False)
+    for idx in dirty_date_idx:
+        options = ["2026/01/01", "エラー", "不明", "2026-01-01 00:00:00"]
+        df.at[idx, "Date"] = np.random.choice(options)
 
-    # 3. 欠損値の注入
-    df.loc[df.sample(frac=0.1).index, "Date"] = np.nan
+    # Price列に汚れ（文字列混入・異常値）
+    dirty_price_idx = np.random.choice(df.index, size=int(rows * 0.1), replace=False)
+    for idx in dirty_price_idx:
+        df.at[idx, "Price"] = "5000円" if np.random.rand() > 0.5 else 999999
+
+    # 欠損値(NaN)の注入
+    for col in df.columns:
+        df.loc[df.sample(frac=0.05).index, col] = np.nan
 
     return df
 
-if st.button("汚れたデータ（日付付き）を生成"):
-    df = generate_dirty_data_with_dates(num_rows)
-    st.session_state['dirty_df'] = df
-    st.write("生成されたデータ（一部）:")
-    st.dataframe(df.head(20))
+# アプリのメイン処理
+if st.button("新しい汚れたデータを生成"):
+    st.session_state['dirty_df'] = generate_dirty_data(num_rows)
 
 if 'dirty_df' in st.session_state:
-    csv = st.session_state['dirty_df'].to_csv(index=False).encode('utf-8-sig')
+    df = st.session_state['dirty_df']
+    
+    st.write("### 生成されたデータプレビュー")
+    st.dataframe(df.head(20))
+
+    # CSVダウンロード処理
+    # エラー防止のため、一度全データを文字列型に変換してからCSV化
+    csv = df.astype(str).replace('nan', '').to_csv(index=False).encode('utf-8-sig')
+    
     st.download_button(
         label="CSVをダウンロード",
         data=csv,
-        file_name='dirty_dataset_with_date.csv',
+        file_name='dirty_dataset.csv',
         mime='text/csv',
     )
     
-    st.warning("""
-    **分析の練習課題:**
-    1. `Date` 列をすべて `datetime` 型に変換してみましょう。（エラーが出る行をどう処理しますか？）
-    2. 表記ゆれ（/区切りや文字列）を統一してみましょう。
-    3. `Date` をキーにして、月ごとの `Price` の平均値を計算してみましょう。
+    st.info("""
+    **【分析者向けTips】**
+    このCSVを読み込んだ後、以下のクレンジングを試してみてください：
+    1. `pd.to_datetime(df['Date'], errors='coerce')` で日付を整形する。
+    2. `pd.to_numeric(df['Price'], errors='coerce')` で価格を数値化する。
+    3. `df.dropna()` で欠損行を処理する。
     """)
+else:
+    st.write("左のボタンを押すとデータが生成されます。")
